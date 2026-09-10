@@ -36,6 +36,14 @@ THINKING_MAX_NEW_TOKENS = 8192
 TEMPERATURE = 1.0
 TOP_P = 0.95
 
+
+# A 4B model tends to echo inline labels ("User input: ..."), so the
+# instruction goes to the system turn and the payload is the bare user turn.
+def _instruction_system(user_prompt: Optional[str]) -> str:
+    instruction = (user_prompt or "").strip()
+    rule = "Output only the requested result. No preamble, labels, or explanations."
+    return f"{instruction}\n\n{rule}" if instruction else rule
+
 # ── app ──────────────────────────────────────────────────────────────────────
 
 app = modal.App(Path(__file__).resolve().parent.name)
@@ -133,22 +141,20 @@ class Inference:
     @modal.method()
     @node_slot(NodeSlots.GEN_TEXT)
     def gen_text(self, input: GenTextInput) -> GenTextOutput:
-        user_message = (
-            f"{input.userPrompt or ''}\n\nUser input: {input.text}\n\n"
-            "Note: output only the requested answer. Do not include any other content."
+        out = self._generate(
+            prompt=input.text,
+            system=_instruction_system(input.userPrompt),
         )
-        out = self._generate(prompt=user_message)
         return GenTextOutput(success=True, text=str(out.get("text", "")))
 
     @modal.method()
     @node_slot(NodeSlots.COMBINE_TEXT)
     def combine_text(self, input: CombineTextInput) -> CombineTextOutput:
         joined = "\n\n".join(input.texts)
-        user_message = (
-            f"{input.userPrompt or ''}\n\nUser input: {joined}\n\n"
-            "Note: output only the requested answer. Do not include any other content."
+        out = self._generate(
+            prompt=joined,
+            system=_instruction_system(input.userPrompt),
         )
-        out = self._generate(prompt=user_message)
         return CombineTextOutput(success=True, text=str(out.get("text", "")))
 
     @modal.fastapi_endpoint(method="GET", label=f"{Path(__file__).resolve().parent.name}-serve")
