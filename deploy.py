@@ -48,7 +48,6 @@ image = (
         # transformers release (config.json "transformers_version").
         "transformers==4.57.1",
         "accelerate==1.13.0",
-        "huggingface_hub>=1.5.0,<2.0",
     )
 )
 
