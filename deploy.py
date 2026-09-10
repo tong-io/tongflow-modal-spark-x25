@@ -22,7 +22,38 @@ volume = modal.Volume.from_name(_volume_name, create_if_missing=True)
 from tongflow.models.combine_text import CombineTextInput, CombineTextOutput
 from tongflow.models.gen_text import GenTextInput, GenTextOutput
 from tongflow.node_slots import NodeSlots
-from tongflow.slots import node_slot
+from tongflow.slots import current_params, node_slot
+
+
+def _adv(name: str, default):
+    """Advanced-section override (``TONGFLOW_SLOT_PARAMS``) or the plugin default."""
+    v = current_params().get(name)
+    if v is None:
+        return default
+    if isinstance(default, bool):
+        return bool(v)
+    if isinstance(default, int):
+        return int(v)
+    if isinstance(default, float):
+        return float(v)
+    return v
+
+# Per-run knobs offered under the node's collapsed "Advanced" section.
+# Pure literal (the platform scanner reads it by AST, never imports this
+# module). Values reach the handlers via current_params(); an untouched
+# control is absent there and falls back to the plugin default.
+TONGFLOW_SLOT_PARAMS = {
+    "gen-text": {
+        "thinking": {"type": "boolean", "default": False, "label": "Thinking"},
+        "temperature": {"type": "number", "default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "label": "Temperature"},
+        "top_p": {"type": "number", "default": 0.95, "min": 0.1, "max": 1.0, "step": 0.05, "label": "Top-p"},
+    },
+    "combine-text": {
+        "thinking": {"type": "boolean", "default": False, "label": "Thinking"},
+        "temperature": {"type": "number", "default": 1.0, "min": 0.1, "max": 2.0, "step": 0.1, "label": "Temperature"},
+        "top_p": {"type": "number", "default": 0.95, "min": 0.1, "max": 1.0, "step": 0.05, "label": "Top-p"},
+    },
+}
 
 # ── plugin-internal knobs (not ABI fields) ───────────────────────────────────
 
@@ -51,7 +82,7 @@ app = modal.App(Path(__file__).resolve().parent.name)
 image = (
     modal.Image.from_registry("pytorch/pytorch:2.8.0-cuda12.8-cudnn9-devel")
     .pip_install(
-        "tongflow==0.3.2", "fastapi[standard]",
+        "tongflow==0.3.3", "fastapi[standard]",
         # The checkpoint ships custom modeling code targeting this exact
         # transformers release (config.json "transformers_version").
         "transformers==4.57.1",
@@ -95,6 +126,7 @@ class Inference:
         enable_thinking: bool = ENABLE_THINKING,
     ) -> dict:
         """Chat generation. Returns {"text", "thinking"}."""
+        enable_thinking = _adv("thinking", enable_thinking)
         if max_new_tokens is None:
             max_new_tokens = THINKING_MAX_NEW_TOKENS if enable_thinking else DEFAULT_MAX_NEW_TOKENS
 
@@ -117,8 +149,8 @@ class Inference:
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
-                temperature=TEMPERATURE,
-                top_p=TOP_P,
+                temperature=_adv("temperature", TEMPERATURE),
+                top_p=_adv("top_p", TOP_P),
                 top_k=0,
                 do_sample=True,
             )
